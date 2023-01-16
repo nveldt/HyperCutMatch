@@ -1,12 +1,15 @@
 ## Implement a Gurobi solver for finding a lower bound on hypergraph all-or-nothing sparsest cut
-
-include("../include/SparsecardDSFM/hypergraph-clustering-utils.jl")
+# ENV["GUROBI_HOME"] = "/Library/gurobi912/mac64/"
 using Gurobi
 using JuMP
 using LinearAlgebra
 gurobi_env = Gurobi.Env()
 
-# Use Gurobi with JuMP interface to get a lower bound for sparsest cut in hypergraphs
+include("hypergraph-helper-functions.jl")
+
+"""
+Uses Gurobi with JuMP interface to get a lower bound for sparsest cut in hypergraphs
+"""
 function HypergraphLeightonRao(H,time_limit=100000,outputflag = true)
 
     m,n = size(H)
@@ -69,6 +72,7 @@ function HypergraphLeightonRao(H,time_limit=100000,outputflag = true)
         return true, X, Y, solverstats 
     else 
         solverstats = [setuptime, solvertime] 
+        @show termination_status(ml)
         return false, termination_status(ml), 0, solverstats
     end
 
@@ -80,6 +84,13 @@ This is an inefficient way to round the LP relaxation
 into a cut with as small of expansion as possible,
 but should not be a bottleneck because solving the LP
 is much more expensive.
+
+For each node, it orders nodes based on how far other nodes are in distance,
+and then checks sweep cuts. I.e., for each node u it computes
+
+S = radius(u, r)
+
+for all values of r and then outputs the best set found.
 """
 function round_hyperLR(X,Elist)
     n = size(X,1)
@@ -116,28 +127,141 @@ function round_hyperLR(X,Elist)
 end
 
 """
-With an indicator vector input eS and hyperedge list Elist,
-compute the all-or-nothing hypergraph expansion for S
+Avoids setting up the problem using JuMP. JuMP can make things slower.
 """
-function aon_expansion(Elist,eS)
-    n = length(eS)
-    S = findall(x->x==eS[1],eS)
-    minS = min(length(S), n - length(S))
-    cutS = 0
-    for t = 1:length(Elist)
-        edge = Elist[t]
-        s = eS[edge[1]]
-        for i = 2:length(edge)
-            if eS[edge[i]] != s
-                cutS += 1
-                break
+function HypergraphLR_noJuMP(H,timelimit=100000,outputflag = true)
+    m,n = size(H)
+    Elist = incidence2elist(H)
+    M = length(Elist)
+    
+    # build map of variables and the objective
+    
+    # The first m variables correspond to the first m edges
+    
+    tic = time()
+    vmap = -ones(Int,n,n)
+    obj = Float64[]
+    for t = 1:M
+        push!(obj, 1)
+    end
+
+    # map from node pairs to their variable index
+    nvars = M
+    for j=1:n
+        for i=1:j-1
+            nvars += 1
+            vmap[i,j] = nvars-1
+            vmap[j,i] = nvars-1
+            push!(obj, 0)
+        end
+    end
+    vtypes = repeat(GRB_CONTINUOUS, nvars)
+    aptr = Ref{Ptr{Cvoid}}()
+    err = GRBnewmodel(gurobi_env, aptr, "HyperLR", nvars, obj, C_NULL, C_NULL, vtypes, C_NULL)
+    m = aptr[]
+    GRBsetdblparam(GRBgetenv(m), GRB_DBL_PAR_TIMELIMIT, timelimit)
+    GRBsetintparam(GRBgetenv(m), "OutputFlag",outputflag)
+
+    # First set of contraints: x[e] >= x[u,v] for each u,v \in e
+    for t = 1:M
+        edge = sort(Elist[t])
+        cind = Int32[0,0]
+        cval = Float64[0,0]
+
+        cind[1] = t-1  # indices start from 0, not 1
+        cval[1] = -1
+        cval[2] = 1
+        for ii = 1:length(edge)
+            for jj = ii+1:length(edge)
+                i = edge[ii]
+                j = edge[jj]
+                cind[2] = vmap[i,j]
+
+                # x[uv] - x[e] <= 0 for u,v \in e
+                error = GRBaddconstr(m, 2, cind, cval, GRB_LESS_EQUAL, 0.0, C_NULL)
             end
         end
     end
-    sc = cutS*( 1/length(S) + 1/(n-length(S)))
-    return cutS/minS, sc
-end
 
+    # Second set of constraints: triangle inequalities
+    cind = Int32[0,0,0]
+    cval = Float64[0,0,0]
+    for i = 1:n-2
+        for j = i+1:n-1
+            for k = j+1:n
+                cind[1] = vmap[j,k]
+                cind[2] = vmap[i,k]
+                cind[3] = vmap[i,j]
+                cval[1] = 1
+                cval[2] = -1
+                cval[3] = -1
+                error = GRBaddconstr(m, 3, cind, cval, GRB_LESS_EQUAL, 0.0, C_NULL)
+
+                cval[1] =-1
+                cval[2] = 1
+                cval[3] = -1
+                error = GRBaddconstr(m, 3, cind, cval, GRB_LESS_EQUAL, 0.0, C_NULL)
+
+                cval[1] = -1
+                cval[2] = -1
+                cval[3] = 1
+                error = GRBaddconstr(m, 3, cind, cval, GRB_LESS_EQUAL, 0.0, C_NULL)
+
+            end
+        end
+    end
+
+    # Final constraint: sum x[ij] = n
+    N = Int64(n*(n-1)/2)
+    cval = ones(N)
+    cind = Int32.(collect(M:M+N-1))
+    error = GRBaddconstr(m, N, cind, cval, GRB_EQUAL, n, C_NULL)
+    setuptime = time()-tic
+
+    tic = time()
+    GRBoptimize(m)
+    solvertime = time()-tic
+
+    stat = Ref{Int32}(0)
+    GRBgetintattr(m, GRB_INT_ATTR_STATUS, stat)
+    # Status codes: https://www.gurobi.com/documentation/9.5/refman/optimization_status_codes.html#sec:StatusCodes
+    status = stat[]
+    # println("Status = $status")
+    if status == 2
+        optimal = true
+    else
+        optimal = false
+    end
+
+    if optimal
+
+        robj = Ref{Float64}(0.0)
+        GRBgetdblattr(m, GRB_DBL_ATTR_OBJVAL, robj)
+        obj = robj[]
+        soln = zeros(nvars)
+        GRBgetdblattrarray(m, GRB_DBL_ATTR_X, 0, nvars, soln)
+        X = zeros(n,n)
+        for j=1:n
+            for i=1:j-1
+                X[i,j] = soln[vmap[i,j]+1]
+                X[j,i] = soln[vmap[i,j]+1]
+            end
+        end
+        Y = zeros(M)
+        for t = 1:M
+            Y[t] = soln[t]
+        end
+        obj = sum(Y)
+        solverstats = [obj, setuptime, solvertime] 
+        GRBfreemodel(m)       
+        return true, X, Y, solverstats 
+    else 
+        solverstats = [setuptime, solvertime] 
+        GRBfreemodel(m) 
+        return false, status, 0, solverstats
+    end
+
+end
 
 """
 If x is a 0,1 matrix satisfying the triangle inequality, then we
@@ -166,39 +290,9 @@ function extractClustering(x)
 end
 
 
-function find_violations!(D::Matrix{Float64}, violations::Vector{Tuple{Int,Int,Int}})
-    n = size(D,1)
-  
-    # We only need this satisfied to within a given tolerance, since the
-    # optimization software will only solve it to within a certain tolerance
-    # anyways. This can be tweaked if necessary.
-    epsi = 1e-8
-    @inbounds for i = 1:n-2
-         for j = i+1:n-1
-            a = D[j,i]
-             for k = j+1:n
-                b = D[k,i]
-                c = D[k,j]
-          if a - b > epsi && a - c > epsi && a-b-c > epsi
-              push!(violations, (i,j,k))
-                  # @constraint(m, x[i,j] - x[i,k] - x[j,k] <= 0)
-          end
-          if b - a > epsi && b - c > epsi && b-a-c > epsi
-              push!(violations, (i,k,j))
-              # @constraint(m, x[i,k] - x[i,j] - x[j,k] <= 0)
-          end
-  
-          if c - a > epsi && c-b>epsi && c-a-b > epsi
-              push!(violations, (j,k,i))
-              # @constraint(m, x[j,k] - x[i,k] - x[i,j] <= 0)
-          end
-        end
-      end
-    end
-end
-
-
-# Subroutine in the rounding scheme
+# Subroutine in the rounding scheme:
+# See https://lucatrevisan.github.io/expanders2016/lecture10.pdf
+# for details
 function onedim_embedding(X)
     @assert(issymmetric(X))
     n = size(X,1)
@@ -242,7 +336,9 @@ function sweepcut(f,Elist)
     return bestS, bestExp
 end
 
-# Apply the randomized rounding procedure many times
+"""
+Apply the randomized rounding procedure for the Leighton-Rao-based LP relaxation, many times.
+"""
 function round_LP_many(X,m,Elist)
     n = size(X,1)
     bestExp = Inf

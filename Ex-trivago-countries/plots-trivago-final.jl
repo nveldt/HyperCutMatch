@@ -1,15 +1,17 @@
 using MAT
 using Plots
 using LaTeXStrings
-M = matread("trivago_countries_large_summary.mat")
+M = matread("../data/trivago-countries/trivago_countries_large_summary.mat")
 inds = [5, 8, 17, 20]
 orig_labels = M["SpecialLabels"][inds]
 Names = M["LabelNames"][orig_labels]
 
 ##
-for i = 1:4
+# for i = 1:4
+i = 1
 name = Names[i]
-M = matread("plotdata_trivago_countries_degreewarm.mat")
+gnormstring = "gnorm_true"
+M = matread("plotdata_trivago_countries_$(gnormstring).mat")
 hcm_cm = M["HCM_conds_mean"][:,i]
 hcm_cs = M["HCM_conds_std"][:,i]
 hcm_tm = M["HCM_time_mean"][:,i]
@@ -74,7 +76,7 @@ plot!(p,1:7,ipm_am, fillalpha=0.3, color = color2, linewidth = lw, markersize = 
 plot!(p,1:7,hcm_am, fillalpha=0.3, color = color3, linewidth = lw, markersize = ms,
     markershape = ms3, markerstrokecolor = color3, label = "HCM")
 
-savefig("Figures/Ratios_$(name)_dw.pdf")
+# savefig("Figures/Ratios_$(name)_$gnormstring.pdf")
 
 ##
 leg = false
@@ -92,7 +94,7 @@ plot!(p,1:7,ipm_t, fillalpha=0.3, color = color2, linewidth = lw, markersize = m
 plot!(p,1:7,[hcm_tm hcm_tm], fillrange=[hcm_tm-hcm_ts hcm_tm+hcm_ts], fillalpha=0.3, color = color3, linewidth = lw, markersize = ms,
     markershape = ms3, markerstrokecolor = color3, label = "")
 
+@show name, mean(ce_t)
+# savefig("Figures/Runtimes_$(name)_$gnormstring.pdf")
 
-savefig("Figures/Runtimes_$(name)_dw.pdf")
 
-end

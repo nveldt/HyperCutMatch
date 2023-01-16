@@ -1,0 +1,42 @@
+ Each small Mathoverflow hypergraph corresponds to a set of question posts (nodes) that are answered by the same user (hyperdges).
+
+Each individual hypergraph is specifically the set of question posts corresponding to the same topic (e.g. graph-theory), and can be seen as subhypergraphs of the larger mathoverflow-answers hypergraph from here:
+
+https://www.cs.cornell.edu/~arb/data/mathoverflow-answers/
+
+The original (full hypergraph) dataset is available in text file format in the 'raw-data' folder.\
+
+We have *manually* selected post topics (node sets) with varying sizes, in order to obtain a set of small benchmark hypergraphs for testing ratio cut objectives.}
+
+
+--------------------
+Summary statistics
+--------------------
+
+Here is a summary of statistics for the 23 hypergraphs:
+
+Label  max |e|  avg |e|   n      m      sum |e|  Hypergraph (question topic)
+---------------------------------------------------------------------
+717      28      6.0     80      17      102.0   numerical-linear-algebra
+313      43      7.8     84      13      101.0   banach-algebras
+386      15      4.1     91      38      157.0   game-theory
+88       9       3.5     95      45      156.0   zeta-functions
+53       18      3.2     100     57      180.0   computer-algebra
+147      12      3.3     105     57      187.0   homology
+79       15      4.2     110     40      166.0   invariant-theory
+227      17      4.6     115     37      169.0   symmetric-groups
+140      17      4.7     120     34      159.0   operads
+851      34      6.1     126     30      182.0   spectral-graph-theory
+420      39      6.3     131     33      207.0   peano-arithmetic
+690      20      4.9     136     37      183.0   random-walks
+537      24      5.1     141     36      183.0   linear-programming
+285      13      3.8     146     66      252.0   noncommutative-geometry
+362      17      4.3     150     50      215.0   permutations
+493      48      5.6     161     40      225.0   quadratic-forms
+523      114     6.3     166     37      233.0   computational-geometry
+180      23      4.7     174     54      253.0   graph-colorings
+395      31      6.8     181     34      230.0   eigenvalues
+293      35      4.2     184     70      297.0   euclidean-geometry
+89       22      5.0     197     58      291.0   determinants
+465      38      5.6     199     47      265.0   additive-combinatorics
+397      80      7.0     209     39      273.0   random-matrices

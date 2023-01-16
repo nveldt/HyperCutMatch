@@ -2,10 +2,13 @@ using MAT
 using StatsBase
 using Statistics
 
+include("../src/hypergraph-helper-functions.jl")
 ## Load information about the four datasets
-M = matread("../data/trivago-large/trivago_countries_large_summary.mat")
+M = matread("../data/trivago-countries/trivago_countries_large_summary.mat")
 Labels = M["SpecialLabels"]
 LabelNames = M["LabelNames"]
+
+gnormstring = "gnorm_true"
 
 inds = [5, 8, 17, 20]
 orig_labels = Labels[inds]
@@ -33,12 +36,13 @@ HCM_app_mean = zeros(dts,4)
 HCM_app_std = zeros(dts,4)
 
 
+##
 
 for i = 1:4
 
 l = orig_labels[i]
 countryname = LabelNames[l]
-mat = matread("../data/trivago-large/trivago_countries_$(l)_2core.mat")
+mat = matread("../data/trivago-countries/trivago_countries_$(l)_2core.mat")
 H = mat["H"] 
 order = round.(Int64,vec(sum(H,dims = 2)))
 d = vec(sum(H,dims = 1))
@@ -66,9 +70,9 @@ for a = 1:length(deltas)
     ## Load IPM output
     if isinteger(delta)
         del = round(Int64,delta)
-        m2 = matread("Output/IPM_tric_$(l)_2core_$(del)_1_combinewarms.mat")
+        m2 = matread("Output/IPM_tric_$(l)_delta_$(del)_$(gnormstring).mat")
     else
-        m2 = matread("Output/IPM_tric_$(l)_2core_$(delta)_1_combinewarms.mat")
+        m2 = matread("Output/IPM_tric_$(l)_delta_$(delta)_$(gnormstring).mat")
     end
     eipm = vec(m2["eipm"])
     Sipm = findall(x->x>0,eipm)
@@ -80,16 +84,19 @@ for a = 1:length(deltas)
     ipm_conds[a] = ipmcond
 
     ## Load CE data
-    if isinteger(delta)
-        del = round(Int64,delta)
-        m2 = matread("Output/CE_tric_$(l)_2core_$(del)_1_degreewarm.mat")
-    else
-        m2 = matread("Output/CE_tric_$(l)_2core_$(delta)_1_degreewarm.mat")
-    end
-    ece = vec(m2["ece"])
-    Sce = findall(x->x>0,ece)
-    cetime = m2["cetime"]
-    cecond = m2["ceCond"]
+    m2 = matread("Output/CE_tric_$(l)_delta_$(delta)_$(gnormstring).mat")
+
+    # if isinteger(delta)
+    #     del = round(Int64,delta)
+    #     m2 = matread("Output/CE_tric_$(l)_delta_$(del)_$(gnormstring).mat")
+    # else
+    #     m2 = matread("Output/CE_tric_$(l)_delta_$(delta)_$(gnormstring).mat")
+    # end
+    Sce = vec(m2["S"])
+    reducetime = m2["reducetime"]
+    sweeptime = m2["sweeptime"]
+    cetime = reducetime+sweeptime
+    cecond = m2["condS"]
     condS, volS, cutS = tl_cond(H,Sce,d,delta,volA,order)
     @assert(abs(cecond-condS) < 1e-12)
     ce_times[a] = cetime
@@ -97,7 +104,7 @@ for a = 1:length(deltas)
 
     ## Load HCM
     for jj = 1:numtimes
-        m1 = matread("Output/HCM_tric_$(l)_2core_$(delta)_$(jj)_longer.mat")
+        m1 = matread("Output/HCM_tric_$(l)_delta_$(delta)_$(jj).mat")
         Runs = m1["RuntimesHCM"]
         hcmtime = m1["solvetime"]
         S = m1["S"]
@@ -113,8 +120,6 @@ for a = 1:length(deltas)
         
     end
 
-    
-    
 end
 
 
@@ -139,7 +144,7 @@ end
 
 ## Save it
 
-matwrite("plotdata_trivago_countries_combinewarms.mat", Dict(
+matwrite("plotdata_trivago_countries_$(gnormstring).mat", Dict(
 "HCM_conds_mean"=>HCM_conds_mean,
 "HCM_conds_std"=>HCM_conds_std,
 "HCM_time_mean"=>HCM_time_mean,
